@@ -4,7 +4,7 @@ cd deps/io-uring && cargo build --examples --release --features "concurrent" && 
 cd ../../client && cargo build --release && cd ..
 
 # run server
-./deps/io-uring/target/release/examples/tcp_echo_concurrent &
+./deps/io-uring/target/release/examples/tcp_echo_concurrent2 &
 
 sleep 1
 
