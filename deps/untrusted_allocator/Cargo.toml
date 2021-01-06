@@ -1,0 +1,13 @@
+[package]
+name = "untrusted_allocator"
+version = "0.1.0"
+edition = "2018"
+
+[features]
+default = [ ]
+
+[dependencies]
+buddy_system_allocator = { git = "https://github.com/rcore-os/buddy_system_allocator.git" }
+sgx_types = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
+sgx_tstd = { git = "https://github.com/apache/teaclave-sgx-sdk.git", features = ["backtrace"] }
+sgx_trts = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }

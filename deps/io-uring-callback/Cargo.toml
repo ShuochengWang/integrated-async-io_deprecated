@@ -1,0 +1,29 @@
+[package]
+name = "io_uring_callback"
+version = "0.1.0"
+authors = ["Tate, Hongliang Tian <tate.thl@antfin.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[target.'cfg(not(sgx))'.dependencies]
+io-uring = { path = "../io-uring", features = ["concurrent"]  }
+atomic = "0.5.0"
+sharded-slab = { path = "../sharded-slab" }
+slab = { path = "../slab" }
+libc = "0.2.0"
+lazy_static = "1.4.0"
+
+[target.'cfg(sgx)'.dependencies]
+io-uring = { path = "../io-uring" }
+atomic = "0.5.0"
+sharded-slab = { path = "../sharded-slab" }
+slab = { path = "../slab" }
+sgx_types = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
+sgx_tstd = { git = "https://github.com/apache/teaclave-sgx-sdk.git", features = ["backtrace"] }
+sgx_trts = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
+
+[dev-dependencies]
+tempfile = "3"
+slab = { path = "../slab" }

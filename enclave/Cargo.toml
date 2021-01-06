@@ -1,0 +1,24 @@
+[package]
+name = "Helloworldsampleenclave"
+version = "1.0.0"
+authors = ["The Teaclave Authors"]
+
+[lib]
+name = "helloworldsampleenclave"
+crate-type = ["staticlib"]
+
+[features]
+default = []
+
+[target.'cfg(not(target_env = "sgx"))'.dependencies]
+sgx_types = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
+sgx_tstd = { git = "https://github.com/apache/teaclave-sgx-sdk.git", features = ["backtrace"] }
+sgx_trts = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
+
+[target.'cfg(sgx)'.dependencies]
+io_uring_callback = { path = "../deps/io-uring-callback" }
+io-uring = { path = "../deps/io-uring" }
+untrusted_allocator = { path = "../deps/untrusted_allocator" }
+slab = { path = "../deps/slab" }
+sharded-slab = { path = "../deps/sharded-slab" }
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }

@@ -1,0 +1,66 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+enclave {
+    from "sgx_tstd.edl" import *;
+    from "sgx_stdio.edl" import *;
+    from "sgx_backtrace.edl" import *;
+    from "sgx_tstdc.edl" import *;
+    from "sgx_net.edl" import *;
+    from "sgx_thread.edl" import *;
+    
+    trusted {
+        /* define ECALLs here. */
+
+        public sgx_status_t run_io_uring_example();
+    };
+
+    untrusted {
+        int ocall_io_uring_register_syscall(
+            long syscall_code, 
+            long fd, 
+            long opcode,
+            [in, size=arg_size, count=nr_args] const void* arg,
+            long nr_args,
+            long arg_size
+        );
+        int ocall_io_uring_setup_syscall(
+            long syscall_code, 
+            long entries, 
+            [in, out, size=p_size] void* p, 
+            long p_size
+        );
+        int ocall_io_uring_enter_syscall(
+            long syscall_code, 
+            long fd, 
+            long to_submit, 
+            long min_complete, 
+            long flags, 
+            [in, size=sig_size] const void* sig, 
+            long sig_size
+        );
+        void ocall_start_enter_syscall_thread(
+            long syscall_code, 
+            long fd, 
+            long to_submit, 
+            long min_complete, 
+            long flags, 
+            [in, size=sig_size] const void* sig, 
+            long sig_size
+        );
+    };
+};
