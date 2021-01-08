@@ -63,3 +63,39 @@ impl<T> RawSlab<T> {
         self.capacity() - self.free_indexes.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test() {
+        let capacity = 1024;
+        let mut vec: Vec<i32> = Vec::with_capacity(capacity);
+        assert_eq!(capacity, vec.capacity());
+
+        let mut slab = unsafe { RawSlab::new(vec.as_mut_ptr(), vec.capacity()) };
+        assert_eq!(slab.capacity(), vec.capacity());
+        assert_eq!(slab.allocated(), 0);
+
+        let mut ptr_vec: Vec<*mut i32> = Vec::with_capacity(capacity);
+        for i in 0..capacity {
+            let entry = slab.alloc();
+            assert_eq!(entry.is_some(), true);
+            ptr_vec.push(entry.unwrap());
+        }
+        let entry = slab.alloc();
+        assert_eq!(entry.is_none(), true);
+        assert_eq!(slab.allocated(), capacity);
+        for i in 0..capacity {
+            unsafe { slab.dealloc(ptr_vec[i]); }
+        }
+        assert_eq!(slab.allocated(), 0);
+
+        let value = slab.alloc().unwrap();
+        unsafe { *value = 1; }
+        assert_eq!(slab.allocated(), 1);
+        unsafe { slab.dealloc(value); }
+        assert_eq!(slab.allocated(), 0);
+    }
+}

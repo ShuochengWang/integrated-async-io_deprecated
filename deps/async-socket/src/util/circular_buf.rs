@@ -197,3 +197,125 @@ impl CircularBuf {
         self.consumable() == 0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test() {
+        let capacity = 1001;
+        let mut vec: Vec<u8> = Vec::with_capacity(capacity);
+        assert_eq!(capacity, vec.capacity());
+
+        let mut cbuf = unsafe {
+            CircularBuf::from_raw_parts(NonNull::new(vec.as_mut_ptr()).unwrap(), capacity)
+        };
+        assert_eq!(cbuf.capacity(), capacity - 1);
+        assert_eq!(cbuf.is_empty(), true);
+        assert_eq!(cbuf.is_full(), false);
+        assert_eq!(cbuf.consumable(), 0);
+        assert_eq!(cbuf.producible(), capacity - 1);
+
+
+        let mut data: Vec<u8> = vec![0; capacity * 2];
+        // produce case
+        // case 1.1: tail >= head && head > 0
+        // case 1.2: tail >= head && head == 0 && tail < len - 1
+        // case 1.3: tail >= head && head == 0 && tail == len - 1
+        // case 2:   tail < head - 1
+        // case 3:   tail >= head - 1
+        // consume case
+        // case 1:   head <= tail
+        // case 2:   head > tail
+        
+        // produce case 1.2
+        let mut beg: usize = 0;
+        let mut end: usize = 500;
+        let produce_len = cbuf.produce(&data[beg..end]);
+        assert_eq!(produce_len, end - beg);
+        for i in beg..end {
+            data[i] = 1;
+        }
+        // consume case 1
+        let consume_len = cbuf.consume(&mut data[beg..end]);
+        assert_eq!(consume_len, end - beg);
+        for i in beg..end {
+            assert_eq!(data[i], 0);
+        }
+        // produce case 1.1
+        beg = 0;
+        end = 800;
+        let produce_len = cbuf.produce(&data[beg..end]);
+        assert_eq!(produce_len, end - beg);
+        // produce case 2
+        beg = 0;
+        end = 200;
+        let produce_len = cbuf.produce(&data[beg..end]);
+        assert_eq!(produce_len, end - beg);
+        // produce case 3
+        beg = 0;
+        end = 1;
+        let produce_len = cbuf.produce(&data[beg..end]);
+        assert_eq!(produce_len, 0);
+        // consume case 2
+        beg = 0;
+        end = 200;
+        let consume_len = cbuf.consume(&mut data[beg..end]);
+        assert_eq!(consume_len, end - beg);
+        // consume case 2
+        beg = 0;
+        end = 800;
+        let consume_len = cbuf.consume(&mut data[beg..end]);
+        assert_eq!(consume_len, end - beg);
+        // consume case 1
+        beg = 0;
+        end = 1;
+        let consume_len = cbuf.consume(&mut data[beg..end]);
+        assert_eq!(consume_len, 0);
+
+        beg = 0;
+        end = data.len();
+        let produce_len = cbuf.produce(&data[beg..end]);
+        assert_eq!(produce_len, cbuf.capacity());
+        assert_eq!(cbuf.producible(), 0);
+        assert_eq!(cbuf.consumable(), produce_len);
+        beg = 0;
+        end = data.len();
+        let consume_len = cbuf.consume(&mut data[beg..end]);
+        assert_eq!(consume_len, cbuf.capacity());
+        assert_eq!(cbuf.producible(), consume_len);
+        assert_eq!(cbuf.consumable(), 0);
+    }
+
+    #[test]
+    fn test_buf_full() {
+        let capacity = 1024;
+        let mut vec: Vec<u8> = Vec::with_capacity(capacity);
+        assert_eq!(capacity, vec.capacity());
+
+        let mut cbuf = unsafe {
+            CircularBuf::from_raw_parts(NonNull::new(vec.as_mut_ptr()).unwrap(), capacity)
+        };
+        assert_eq!(cbuf.capacity(), capacity - 1);
+        assert_eq!(cbuf.is_empty(), true);
+        assert_eq!(cbuf.is_full(), false);
+        assert_eq!(cbuf.consumable(), 0);
+        assert_eq!(cbuf.producible(), capacity - 1);
+
+
+        let data: Vec<u8> = vec![0; capacity * 2];
+
+        // produce case 1.2
+        let mut beg: usize = 0;
+        let mut end: usize = capacity - 1;
+        let produce_len = cbuf.produce(&data[beg..end]);
+        assert_eq!(produce_len, end - beg);
+
+        // produce case 1.3
+        beg = 0;
+        end = capacity;
+        let produce_len = cbuf.produce(&data[beg..end]);
+        assert_eq!(produce_len, 0);
+    }
+}
