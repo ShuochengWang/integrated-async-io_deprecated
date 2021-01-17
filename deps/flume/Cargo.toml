@@ -27,6 +27,9 @@ futures-core = { version = "0.3.5", default_features = false, optional = true }
 nanorand = { version = "0.5", features = ["getrandom"], optional = true }
 pin-project = { version = "1", optional = true }
 
+[target.'cfg(sgx)'.dependencies]
+sgx_tstd = { git = "https://github.com/apache/teaclave-sgx-sdk.git", features = ["backtrace", "thread", "untrusted_time"] }
+
 [dev-dependencies]
 #flume-test = { path = "../flume-test" }
 crossbeam-channel = "0.4"
