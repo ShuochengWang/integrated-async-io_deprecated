@@ -2,6 +2,7 @@
 name = "Helloworldsampleenclave"
 version = "1.0.0"
 authors = ["The Teaclave Authors"]
+edition = "2018"
 
 [lib]
 name = "helloworldsampleenclave"
@@ -12,10 +13,13 @@ default = []
 
 [target.'cfg(not(target_env = "sgx"))'.dependencies]
 sgx_types = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
-sgx_tstd = { git = "https://github.com/apache/teaclave-sgx-sdk.git", features = ["backtrace"] }
+sgx_tstd = { git = "https://github.com/apache/teaclave-sgx-sdk.git", features = ["backtrace", "thread"] }
 sgx_trts = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
 
 [target.'cfg(sgx)'.dependencies]
+async-socket = { path = "../deps/async-socket" }
+futures = { version = "0.3", default-features = false }
+async_rt = { path = "../deps/async-rt" } 
 io_uring_callback = { path = "../deps/io-uring-callback" }
 io-uring = { path = "../deps/io-uring" }
 untrusted_allocator = { path = "../deps/untrusted_allocator" }

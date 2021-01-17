@@ -34,13 +34,17 @@ extern crate lazy_static;
 
 use sgx_types::*;
 
+mod tcp_echo_async_socket;
 mod tcp_echo_io_uring;
 mod tcp_echo_io_uring_callback;
 
 #[no_mangle]
 pub extern "C" fn run_io_uring_example() -> sgx_status_t {
+    std::backtrace::enable_backtrace("enclave.signed.so", std::backtrace::PrintFormat::Full);
+
     println!("[ECALL] run_io_uring_example");
 
     // tcp_echo_io_uring::tcp_echo_io_uring()
-    tcp_echo_io_uring_callback::tcp_echo_io_uring_callback()
+    // tcp_echo_io_uring_callback::tcp_echo_io_uring_callback()
+    tcp_echo_async_socket::tcp_echo_async_socket()
 }
