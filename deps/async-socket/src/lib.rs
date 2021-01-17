@@ -159,20 +159,30 @@ impl<P: IoUringProvider> Socket<P> {
         retval
     }
 
-    pub async fn accept(&self, addr: Option<&mut libc::sockaddr_in>) -> i32 {
+    pub async fn accept(&self, addr: Option<&mut libc::sockaddr_in>) -> Result<Self, i32> {
         let acceptor = {
             let state = self.state.read().unwrap();
             // Sanity checks
             match state.deref() {
                 State::Accepting { acceptor } => acceptor.clone(),
                 _ => {
-                    return -libc::EINVAL;
+                    return Err(-libc::EINVAL);
                 }
             }
         };
 
         let retval = acceptor.accept(addr).await;
-        retval
+        if retval < 0 {
+            return Err(retval);
+        }
+
+        let common = Arc::new(Common::new_with_fd(retval));
+        let state = RwLock::new({
+            let sender = Sender::new(common.clone(), DEFAULT_SEND_BUF_SIZE);
+            let receiver = Receiver::new(common.clone(), DEFAULT_RECV_BUF_SIZE);
+            State::Connected { sender, receiver }
+        });
+        Ok(Self { common, state })
     }
 
     pub fn poll(&self, mask: Events, poller: Option<&mut Poller>) -> Events {
