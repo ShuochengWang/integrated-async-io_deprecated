@@ -1,6 +1,8 @@
 #![cfg_attr(not(test), no_std)]
 #![feature(const_fn)]
 #![feature(thread_local)]
+// comment out this feature in host!!!
+#![feature(const_fn_fn_ptr_basics)]
 
 extern crate alloc;
 extern crate bit_vec;
