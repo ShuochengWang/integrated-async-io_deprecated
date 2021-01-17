@@ -1,3 +1,8 @@
+#[cfg(sgx)]
+use sgx_trts::libc;
+#[cfg(sgx)]
+use std::prelude::v1::*;
+
 use atomic::{Atomic, Ordering};
 
 use crate::io::IoUringProvider;
@@ -13,7 +18,10 @@ pub struct Common<P: IoUringProvider> {
 
 impl<P: IoUringProvider> Common<P> {
     pub fn new() -> Self {
+        #[cfg(not(sgx))]
         let fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0) };
+        #[cfg(sgx)]
+        let fd = unsafe { libc::ocall::socket(libc::AF_INET, libc::SOCK_STREAM, 0) };
         assert!(fd >= 0);
         let pollee = Pollee::new(Events::empty());
         let error = Atomic::new(None);
@@ -65,7 +73,10 @@ impl<P: IoUringProvider> Common<P> {
 impl<P: IoUringProvider> Drop for Common<P> {
     fn drop(&mut self) {
         unsafe {
+            #[cfg(not(sgx))]
             libc::close(self.fd);
+            #[cfg(sgx)]
+            libc::ocall::close(self.fd);
         }
     }
 }

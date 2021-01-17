@@ -1,8 +1,18 @@
+#[cfg(sgx)]
+use sgx_trts::libc;
+#[cfg(sgx)]
+use std::prelude::v1::*;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ptr::NonNull;
+#[cfg(not(sgx))]
 use std::sync::{Arc, Mutex, MutexGuard};
+#[cfg(sgx)]
+use std::sync::{Arc, SgxMutex as Mutex, SgxMutexGuard as MutexGuard};
 
 use io_uring_callback::{Handle, Fd};
+#[cfg(sgx)]
+use untrusted_allocator::UntrustedAllocator;
+
 use crate::io::{Common, IoUringProvider};
 use crate::poll::{Events, Poller};
 use crate::util::CircularBuf;
@@ -15,12 +25,17 @@ pub struct Receiver<P: IoUringProvider> {
 
 struct Inner {
     buf: ManuallyDrop<CircularBuf>,
-    // TODO: for SGX, this should be an allocator for untrusted memory
+    #[cfg(not(sgx))]
     buf_alloc: ManuallyDrop<Vec<u8>>,
+    #[cfg(sgx)]
+    buf_alloc: ManuallyDrop<UntrustedAllocator>,
     pending_io: Option<Handle>,
     end_of_file: bool,
     iovecs: ManuallyDrop<*mut [MaybeUninit<libc::iovec>; 2]>,
+    #[cfg(not(sgx))]
     iovecs_alloc: ManuallyDrop<[MaybeUninit<libc::iovec>; 2]>,
+    #[cfg(sgx)]
+    iovecs_alloc: ManuallyDrop<UntrustedAllocator>,
 }
 
 unsafe impl Send for Inner {}
@@ -170,14 +185,21 @@ impl<P: IoUringProvider> Receiver<P> {
     pub fn shutdown(&self) {
         let inner = self.inner.lock().unwrap();
         unsafe {
+            #[cfg(not(sgx))]
             libc::shutdown(self.common.fd(), libc::SHUT_RD);
+            #[cfg(sgx)]
+            libc::ocall::shutdown(self.common.fd(), libc::SHUT_RD);
         }
     }
 }
 
 impl Inner {
     pub fn new(buf_size: usize) -> Self {
+        #[cfg(not(sgx))]
         let mut buf_alloc = Vec::<u8>::with_capacity(buf_size);
+        #[cfg(sgx)]
+        let buf_alloc = UntrustedAllocator::new(buf_size, 1).unwrap();
+
         let buf = unsafe {
             let ptr = NonNull::new_unchecked(buf_alloc.as_mut_ptr());
             let len = buf_alloc.capacity();
@@ -185,8 +207,17 @@ impl Inner {
         };
         let pending_io = None;
         let end_of_file = false;
+        
+        #[cfg(not(sgx))]
         let mut iovecs_alloc = unsafe { std::mem::zeroed() };
+        #[cfg(not(sgx))]
         let iovecs = &mut iovecs_alloc as *mut [MaybeUninit<libc::iovec>; 2];
+        
+        #[cfg(sgx)]
+        let iovecs_alloc = UntrustedAllocator::new(core::mem::size_of::<[MaybeUninit<libc::iovec>; 2]>(), 8).unwrap();
+        #[cfg(sgx)]
+        let iovecs = iovecs_alloc.as_mut_ptr() as *mut [MaybeUninit<libc::iovec>; 2];
+
         Inner {
             buf: ManuallyDrop::new(buf),
             buf_alloc: ManuallyDrop::new(buf_alloc),

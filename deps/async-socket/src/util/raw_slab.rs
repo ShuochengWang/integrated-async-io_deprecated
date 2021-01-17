@@ -1,3 +1,5 @@
+#[cfg(sgx)]
+use std::prelude::v1::*;
 use std::ptr::NonNull;
 
 /// Compared to `slab::Slab`, `RawSlab` gives more control by providing unsafe APIs.

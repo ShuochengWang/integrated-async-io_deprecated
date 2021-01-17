@@ -3,7 +3,10 @@ mod event_counter;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(not(sgx))]
 use std::sync::{Arc, Mutex, Weak};
+#[cfg(sgx)]
+use std::sync::{Arc, SgxMutex as Mutex, Weak};
 
 use atomic::Atomic;
 

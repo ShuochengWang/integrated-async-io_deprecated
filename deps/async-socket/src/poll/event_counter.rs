@@ -1,7 +1,12 @@
+#[cfg(sgx)]
+use std::prelude::v1::*;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(not(sgx))]
 use std::sync::Mutex;
+#[cfg(sgx)]
+use std::sync::SgxMutex as Mutex;
 use std::task::{Context, Poll, Waker};
 
 /// A counter for wait and wakeup.

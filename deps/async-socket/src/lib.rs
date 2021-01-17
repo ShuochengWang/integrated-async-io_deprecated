@@ -1,14 +1,38 @@
+#![cfg_attr(sgx, no_std)]
 #![feature(maybe_uninit_extra)]
+// comment out this feature in SGX!!!
+// #![feature(hash_set_entry)]
 #![allow(unused_variables)]
 #![allow(dead_code)]
+
+#[cfg(sgx)]
+extern crate sgx_types;
+#[cfg(sgx)]
+#[macro_use]
+extern crate sgx_tstd as std;
+#[cfg(sgx)]
+extern crate sgx_trts;
+#[cfg(sgx)]
+extern crate untrusted_allocator;
+
+#[cfg(sgx)]
+pub use sgx_trts::libc;
+#[cfg(sgx)]
+use std::prelude::v1::*;
 
 mod io;
 mod poll;
 mod util;
 
+#[cfg(not(sgx))]
 use std::{
     ops::Deref,
     sync::{Arc, RwLock},
+};
+#[cfg(sgx)]
+use std::{
+    ops::Deref,
+    sync::{Arc, SgxRwLock as RwLock},
 };
 
 use crate::{
@@ -57,7 +81,10 @@ impl<P: IoUringProvider> Socket<P> {
                 let fd = self.common.fd();
                 let addr_ptr = addr as *const _ as _;
                 let addr_len = std::mem::size_of::<libc::sockaddr_in>() as _;
+                #[cfg(not(sgx))]
                 let retval = unsafe { libc::bind(fd, addr_ptr, addr_len) };
+                #[cfg(sgx)]
+                let retval = unsafe { libc::ocall::bind(fd, addr_ptr, addr_len) };
                 retval
             }
             _ => -libc::EINVAL,
@@ -80,7 +107,10 @@ impl<P: IoUringProvider> Socket<P> {
         }
 
         let fd = self.common.fd();
+        #[cfg(not(sgx))]
         let retval = unsafe { libc::listen(fd, backlog) };
+        #[cfg(sgx)]
+        let retval = unsafe { libc::ocall::listen(fd, backlog) };
         if retval < 0 {
             return retval;
         }

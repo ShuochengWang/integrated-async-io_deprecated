@@ -1,12 +1,19 @@
+#[cfg(sgx)]
+use sgx_trts::libc;
+#[cfg(sgx)]
+use std::prelude::v1::*;
+#[cfg(not(sgx))]
 use std::sync::{Arc, Mutex};
+#[cfg(sgx)]
+use std::sync::{Arc, SgxMutex as Mutex};
 use std::mem::ManuallyDrop;
 use io_uring_callback::{Handle, Fd};
+#[cfg(sgx)]
+use untrusted_allocator::UntrustedAllocator;
 
 use crate::io::{Common, IoUringProvider};
 use crate::poll::{Events, Pollee, Poller};
 
-// TODO: import Handle from io_uring_callback crate
-struct Handle;
 
 pub struct Connector<P: IoUringProvider> {
     common: Arc<Common<P>>,
@@ -20,7 +27,10 @@ struct Inner {
     pending_io: Option<Handle>,
     is_shutdown: bool,
     addr: ManuallyDrop<*mut libc::sockaddr_in>,
+    #[cfg(not(sgx))]
     addr_alloc: ManuallyDrop<libc::sockaddr_in>,
+    #[cfg(sgx)]
+    addr_alloc: ManuallyDrop<UntrustedAllocator>,
 }
 
 unsafe impl Send for Inner {}
@@ -102,8 +112,16 @@ impl<P: IoUringProvider> Connector<P> {
 
 impl Inner {
     pub fn new() -> Self {
+        #[cfg(not(sgx))]
         let mut addr_alloc = unsafe { std::mem::zeroed() };
+        #[cfg(not(sgx))]
         let addr = &mut addr_alloc as *mut libc::sockaddr_in;
+        
+        #[cfg(sgx)]
+        let addr_alloc = UntrustedAllocator::new(core::mem::size_of::<libc::sockaddr_in>(), 8).unwrap();
+        #[cfg(sgx)]
+        let addr = addr_alloc.as_mut_ptr() as *mut libc::sockaddr_in;
+
         Self {
             pending_io: None,
             is_shutdown: false,

@@ -1,16 +1,23 @@
+#[cfg(sgx)]
+use sgx_trts::libc;
+#[cfg(sgx)]
+use std::prelude::v1::*;
 use std::collections::VecDeque;
 use std::mem::ManuallyDrop;
+#[cfg(not(sgx))]
 use std::sync::{Arc, Mutex, MutexGuard};
+#[cfg(sgx)]
+use std::sync::{Arc, SgxMutex as Mutex, SgxMutexGuard as MutexGuard};
 
 use slab::Slab;
 use io_uring_callback::{Handle, Fd};
+#[cfg(sgx)]
+use untrusted_allocator::UntrustedAllocator;
 
 use crate::io::{Common, IoUringProvider};
 use crate::poll::{Events, Poller};
 use crate::util::RawSlab;
 
-// TODO: import Handle from io_uring_callback crate
-struct Handle;
 
 pub struct Acceptor<P: IoUringProvider> {
     common: Arc<Common<P>>,
@@ -21,7 +28,10 @@ struct Inner {
     accept_slab: Slab<Accept>,
     param_raw_slab: ManuallyDrop<RawSlab<AcceptParam>>,
     // The underlying heap buffer for param_slab.
+    #[cfg(not(sgx))]
     param_raw_slab_buf: ManuallyDrop<Vec<AcceptParam>>,
+    #[cfg(sgx)]
+    param_raw_slab_buf: ManuallyDrop<UntrustedAllocator>,
     completed_indexes: VecDeque<usize>,
 }
 
@@ -192,7 +202,11 @@ impl Inner {
 
         let accept_slab = Slab::with_capacity(backlog);
 
+        #[cfg(not(sgx))]
         let mut param_raw_slab_buf = ManuallyDrop::new(Vec::with_capacity(backlog));
+        #[cfg(sgx)]
+        let param_raw_slab_buf = ManuallyDrop::new(
+            UntrustedAllocator::new(backlog * core::mem::size_of::<AcceptParam>(), 8).unwrap());
         let param_raw_slab = unsafe {
             let ptr = param_raw_slab_buf.as_mut_ptr() as *mut AcceptParam;
             ManuallyDrop::new(RawSlab::new(ptr, backlog))
@@ -221,7 +235,10 @@ impl Drop for Inner {
 
             let fd = completed_accept.fd().unwrap();
             unsafe {
+                #[cfg(not(sgx))]
                 libc::close(fd);
+                #[cfg(sgx)]
+                libc::ocall::close(fd);
             }
 
             self.accept_slab.remove(completed_index);
