@@ -56,7 +56,23 @@ impl UntrustedAllocator {
         }
 
         let layout = Layout::from_size_align(buf_size, buf_align).map_err(|_| ())?;
-        let buf_ptr = HEAP_ALLOCATOR.lock().alloc(layout)?.as_ptr();
+
+        let mut alloc = HEAP_ALLOCATOR.lock();
+        if alloc.stats_total_bytes() == 0 {
+            // need init HEAP_ALLOCATOR
+            let size = 1024 * 1024 * 128;
+            let heap_ptr = unsafe { libc::ocall::malloc(size) };
+            let heap_size = if heap_ptr.is_null() { 0 } else { size };
+            unsafe {
+                alloc.init(heap_ptr as *const u8 as usize, heap_size);
+            }
+            println!(
+                "[untrusted_allocator] init HEAP_ALLOCATOR, want size: {}, real size: {}",
+                size, heap_size
+            );
+        }
+
+        let buf_ptr = alloc.alloc(layout)?.as_ptr();
         let buf_pos = AtomicUsize::new(0);
         Ok(Self {
             buf_ptr,
@@ -64,6 +80,14 @@ impl UntrustedAllocator {
             buf_pos,
             buf_align,
         })
+    }
+
+    pub fn as_mut_ptr(&self) -> *mut u8 {
+        self.buf_ptr
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.buf_size
     }
 
     pub fn new_slice(&self, src_slice: &[u8]) -> Result<&[u8], ()> {
