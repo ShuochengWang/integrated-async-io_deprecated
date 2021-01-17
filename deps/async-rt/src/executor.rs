@@ -26,6 +26,10 @@ pub fn run_tasks() {
     EXECUTOR.run_tasks()
 }
 
+pub fn register_actor(actor: impl Fn() + Send + 'static) {
+    EXECUTOR.register_actor(actor)
+}
+
 pub fn shutdown() {
     EXECUTOR.shutdown()
 }
@@ -43,6 +47,7 @@ pub(crate) struct Executor {
     task_senders: Vec<Sender<Arc<Task>>>,
     next_run_queue_id: AtomicU32,
     is_shutdown: AtomicBool,
+    actors: Mutex<Vec<Box<dyn Fn() + Send + 'static>>>,
 }
 
 impl Executor {
@@ -62,6 +67,7 @@ impl Executor {
 
         let is_shutdown = AtomicBool::new(false);
         let next_run_queue_id = AtomicU32::new(0);
+        let actors = Mutex::new(Vec::new());
 
         let new_self = Self {
             parallelism,
@@ -69,6 +75,7 @@ impl Executor {
             task_senders,
             next_run_queue_id,
             is_shutdown,
+            actors,
         };
         Ok(new_self)
     }
@@ -82,6 +89,8 @@ impl Executor {
         assert!(run_queue_id < self.parallelism);
         let run_queue = &self.run_queues[run_queue_id as usize];
         loop {
+            self.run_actors();
+            
             let task = {
                 let task_res = run_queue.try_recv();
 
@@ -147,5 +156,15 @@ impl Executor {
 
     pub fn is_shutdown(&self) -> bool {
         self.is_shutdown.load(Ordering::Relaxed)
+    }
+
+    pub fn register_actor(&self, actor: impl Fn() + Send + 'static) {
+        let mut actors = self.actors.lock();
+        actors.push(Box::new(actor));
+    }
+
+    fn run_actors(&self) {
+        let actors = self.actors.lock();
+        actors.iter().for_each(|actor| actor());
     }
 }
