@@ -10,4 +10,10 @@ edition = "2018"
 atomic = "0.5.0"
 bitflags = "1.2"
 libc = "0.2"
-slab = "0.4"
+slab = { path = "../slab" }
+io_uring_callback = { path = "../io-uring-callback" }
+
+[dev-dependencies]
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
+futures = { version = "0.3", default-features = false }
+async_rt = { path = "../async-rt" } 
