@@ -25,6 +25,18 @@ impl<P: IoUringProvider> Common<P> {
         }
     }
 
+    pub fn new_with_fd(fd: i32) -> Self {
+        assert!(fd >= 0);
+        let pollee = Pollee::new(Events::empty());
+        let error = Atomic::new(None);
+        Self {
+            fd,
+            pollee,
+            error,
+            phantom_data: std::marker::PhantomData,
+        }
+    }
+
     pub fn error(&self) -> Option<i32> {
         self.error.load(Ordering::Acquire)
     }

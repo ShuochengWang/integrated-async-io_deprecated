@@ -1,4 +1,6 @@
 use std::sync::{Arc, Mutex};
+use std::mem::ManuallyDrop;
+use io_uring_callback::{Handle, Fd};
 
 use crate::io::{Common, IoUringProvider};
 use crate::poll::{Events, Pollee, Poller};
@@ -17,7 +19,11 @@ pub struct Connector<P: IoUringProvider> {
 struct Inner {
     pending_io: Option<Handle>,
     is_shutdown: bool,
+    addr: ManuallyDrop<*mut libc::sockaddr_in>,
+    addr_alloc: ManuallyDrop<libc::sockaddr_in>,
 }
+
+unsafe impl Send for Inner {}
 
 impl<P: IoUringProvider> Connector<P> {
     pub(crate) fn new(common: Arc<Common<P>>) -> Self {
@@ -41,7 +47,8 @@ impl<P: IoUringProvider> Connector<P> {
             // This method should be called once
             debug_assert!(inner.pending_io.is_some());
 
-            let handle = self.initiate_async_connect(addr);
+            unsafe { **inner.addr = *addr; }
+            let handle = self.initiate_async_connect(*inner.addr as *const libc::sockaddr_in);
             inner.pending_io.replace(handle);
         }
 
@@ -56,12 +63,11 @@ impl<P: IoUringProvider> Connector<P> {
         {
             let inner = self.inner.lock().unwrap();
             let handle = inner.pending_io.as_ref().unwrap();
-            todo!("import io_uring_callback crate")
-            //handle.retval().unwrap()
+            handle.retval().unwrap()
         }
     }
 
-    fn initiate_async_connect(self: &Arc<Self>, addr: &libc::sockaddr_in) -> Handle {
+    fn initiate_async_connect(self: &Arc<Self>, addr: *const libc::sockaddr_in) -> Handle {
         let connector = self.clone();
         let callback = move |retval: i32| {
             debug_assert!(retval <= 0);
@@ -72,9 +78,10 @@ impl<P: IoUringProvider> Connector<P> {
             }
         };
 
-        let handle = todo!("import io_uring_callback crate");
-        //let io_uring = self.common.io_uring();
-        //let handle = io_uring.connect(self.common.fd(), address, len, callback);
+        let io_uring = self.common.io_uring();
+        let handle = unsafe {
+            io_uring.connect(Fd(self.common.fd()), addr as *const libc::sockaddr, core::mem::size_of::<libc::sockaddr_in>() as u32, callback)
+        };
         handle
     }
 
@@ -95,9 +102,22 @@ impl<P: IoUringProvider> Connector<P> {
 
 impl Inner {
     pub fn new() -> Self {
+        let mut addr_alloc = unsafe { std::mem::zeroed() };
+        let addr = &mut addr_alloc as *mut libc::sockaddr_in;
         Self {
             pending_io: None,
             is_shutdown: false,
+            addr: ManuallyDrop::new(addr),
+            addr_alloc: ManuallyDrop::new(addr_alloc),
+        }
+    }
+}
+
+impl Drop for Inner {
+    fn drop(&mut self) {
+        unsafe {
+            ManuallyDrop::drop(&mut self.addr);
+            ManuallyDrop::drop(&mut self.addr_alloc);
         }
     }
 }

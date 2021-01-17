@@ -2,12 +2,11 @@ use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ptr::NonNull;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use io_uring_callback::{Handle, Fd};
 use crate::io::{Common, IoUringProvider};
 use crate::poll::{Events, Poller};
 use crate::util::CircularBuf;
 
-// TODO: import Handle from io_uring_callback crate
-struct Handle;
 
 pub struct Receiver<P: IoUringProvider> {
     common: Arc<Common<P>>,
@@ -20,7 +19,11 @@ struct Inner {
     buf_alloc: ManuallyDrop<Vec<u8>>,
     pending_io: Option<Handle>,
     end_of_file: bool,
+    iovecs: ManuallyDrop<*mut [MaybeUninit<libc::iovec>; 2]>,
+    iovecs_alloc: ManuallyDrop<[MaybeUninit<libc::iovec>; 2]>,
 }
+
+unsafe impl Send for Inner {}
 
 impl<P: IoUringProvider> Receiver<P> {
     /// Construct the receiver of a socket.
@@ -130,18 +133,17 @@ impl<P: IoUringProvider> Receiver<P> {
 
         // Construct the iovec for the async fill
         let mut iovec_len = 1;
-        let mut iovec: [MaybeUninit<libc::iovec>; 2] =
-            unsafe { MaybeUninit::uninit().assume_init() };
+        let iovec_ptr = *inner.iovecs;
         unsafe {
             inner.buf.with_producer_view(|part0, part1| {
                 debug_assert!(part0.len() > 0);
-                iovec[0].as_mut_ptr().write(libc::iovec {
+                (*iovec_ptr)[0].write(libc::iovec {
                     iov_base: part0.as_ptr() as _,
                     iov_len: part0.len() as _,
                 });
 
                 if part1.len() > 0 {
-                    iovec[1].as_mut_ptr().write(libc::iovec {
+                    (*iovec_ptr)[1].write(libc::iovec {
                         iov_base: part1.as_ptr() as _,
                         iov_len: part1.len() as _,
                     });
@@ -155,8 +157,9 @@ impl<P: IoUringProvider> Receiver<P> {
 
         // Submit the async flush to io_uring
         let io_uring = &self.common.io_uring();
-        let handle = todo!("import io_uring_callback crate");
-        //let handle = io_uring.readv(self.common.fd, iovec.as_ptr(), iovec_len, 0, complete_fn);
+        let handle = unsafe {
+            io_uring.readv(Fd(self.common.fd()), iovec_ptr as *const _, iovec_len, 0, 0, complete_fn)
+        };
         inner.pending_io.replace(handle);
     }
 
@@ -182,11 +185,15 @@ impl Inner {
         };
         let pending_io = None;
         let end_of_file = false;
+        let mut iovecs_alloc = unsafe { std::mem::zeroed() };
+        let iovecs = &mut iovecs_alloc as *mut [MaybeUninit<libc::iovec>; 2];
         Inner {
             buf: ManuallyDrop::new(buf),
             buf_alloc: ManuallyDrop::new(buf_alloc),
             pending_io,
             end_of_file,
+            iovecs: ManuallyDrop::new(iovecs),
+            iovecs_alloc: ManuallyDrop::new(iovecs_alloc),
         }
     }
 }
@@ -201,6 +208,8 @@ impl Drop for Inner {
         unsafe {
             ManuallyDrop::drop(&mut self.buf);
             ManuallyDrop::drop(&mut self.buf_alloc);
+            ManuallyDrop::drop(&mut self.iovecs);
+            ManuallyDrop::drop(&mut self.iovecs_alloc);
         }
     }
 }

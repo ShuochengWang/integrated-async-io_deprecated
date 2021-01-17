@@ -1,4 +1,4 @@
-#![feature(hash_set_entry)]
+#![feature(maybe_uninit_extra)]
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
@@ -12,9 +12,10 @@ use std::{
 };
 
 use crate::{
-    io::{Acceptor, Common, Connector, IoUring, IoUringProvider, Receiver, Sender},
+    io::{Acceptor, Common, Connector, IoUring, Receiver, Sender},
     poll::{Events, Pollee, Poller},
 };
+pub use crate::io::IoUringProvider;
 
 /// A IPv4 stream socket with async APIs.
 pub struct Socket<P: IoUringProvider> {

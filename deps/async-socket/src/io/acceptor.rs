@@ -3,6 +3,7 @@ use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use slab::Slab;
+use io_uring_callback::{Handle, Fd};
 
 use crate::io::{Common, IoUringProvider};
 use crate::poll::{Events, Poller};
@@ -18,20 +19,26 @@ pub struct Acceptor<P: IoUringProvider> {
 
 struct Inner {
     accept_slab: Slab<Accept>,
-    addr_raw_slab: ManuallyDrop<RawSlab<libc::sockaddr_in>>,
-    // The underlying heap buffer for addr_raw_slab.
-    // TODO: For SGX, modify this to use untrusted memory
-    addr_raw_slab_buf: ManuallyDrop<Vec<libc::sockaddr_in>>,
+    param_raw_slab: ManuallyDrop<RawSlab<AcceptParam>>,
+    // The underlying heap buffer for param_slab.
+    param_raw_slab_buf: ManuallyDrop<Vec<AcceptParam>>,
     completed_indexes: VecDeque<usize>,
+}
+
+unsafe impl Send for Inner {}
+
+struct AcceptParam {
+    addr: libc::sockaddr_in,
+    addrlen: libc::socklen_t,
 }
 
 enum Accept {
     Pending {
-        addr: *mut libc::sockaddr_in,
+        param: *mut AcceptParam,
         handle: Handle,
     },
     Completed {
-        addr: *mut libc::sockaddr_in,
+        param: *mut AcceptParam,
         fd: i32,
     },
 }
@@ -95,8 +102,9 @@ impl<P: IoUringProvider> Acceptor<P> {
 
         let completed = inner.accept_slab.get(completed_index).unwrap();
         match completed {
-            Accept::Completed { addr, fd } => {
-                let addr = *addr;
+            Accept::Completed { param, fd } => {
+                let param = *param;
+                let addr = unsafe { (*param).addr_mut_ptr() };
                 let fd = *fd;
                 drop(completed);
 
@@ -105,7 +113,7 @@ impl<P: IoUringProvider> Acceptor<P> {
                 }
 
                 // Free the resources associated with the completed accept
-                unsafe { inner.addr_raw_slab.dealloc(addr) };
+                unsafe { inner.param_raw_slab.dealloc(param) };
                 inner.accept_slab.remove(completed_index);
 
                 self.initiate_async_accepts(&mut inner);
@@ -123,11 +131,15 @@ impl<P: IoUringProvider> Acceptor<P> {
         // And for the maximal performance, we try to make the two sides equal.
         while inner.accept_slab.len() < inner.accept_slab.capacity() {
             // Allocate resources for the new accept from the slabs
-            let addr = inner.addr_raw_slab.alloc().unwrap();
+            let param = inner.param_raw_slab.alloc().unwrap();
+            let addr = unsafe { (*param).addr_mut_ptr() };
+            let addrlen = unsafe { (*param).addrlen_mut_ptr() };
+            unsafe {
+                *addrlen = std::mem::size_of::<libc::sockaddr_in>() as u32;
+            }
             let accept_slab_entry = inner.accept_slab.vacant_entry();
 
             // Prepare the arguments for the io_uring accept
-            let addr_len = std::mem::size_of::<libc::sockaddr_in>();
             let flags = 0;
             let callback = {
                 let accept_slab_index = accept_slab_entry.key();
@@ -141,9 +153,9 @@ impl<P: IoUringProvider> Acceptor<P> {
                         acceptor.common.pollee().add(Events::ERR);
 
                         // Free the resources allocated from the slabs
-                        let addr = pending_accept.addr();
+                        let param = pending_accept.param();
                         drop(pending_accept);
-                        unsafe { inner.addr_raw_slab.dealloc(addr) };
+                        unsafe { inner.param_raw_slab.dealloc(param) };
                         inner.accept_slab.remove(accept_slab_index);
 
                         return;
@@ -156,12 +168,13 @@ impl<P: IoUringProvider> Acceptor<P> {
                     acceptor.common.pollee().add(Events::IN);
                 }
             };
-            let handle = todo!("import io_uring_callback crate");
-            //let io_uring = self.common.io_uring();
-            //let handle = io_uring.accept(self.common.fd, addr, addr_len, flags, callback);
+            let io_uring = self.common.io_uring();
+            let handle = unsafe {
+                io_uring.accept(Fd(self.common.fd()), addr as *mut libc::sockaddr, addrlen, flags, callback)
+            };
 
             // Record the pending accept
-            let pending_accept = Accept::Pending { addr, handle };
+            let pending_accept = Accept::Pending { param, handle };
             accept_slab_entry.insert(pending_accept);
         }
     }
@@ -179,17 +192,17 @@ impl Inner {
 
         let accept_slab = Slab::with_capacity(backlog);
 
-        let mut addr_raw_slab_buf = ManuallyDrop::new(Vec::with_capacity(backlog));
-        let addr_raw_slab = unsafe {
-            let ptr = addr_raw_slab_buf.as_mut_ptr();
+        let mut param_raw_slab_buf = ManuallyDrop::new(Vec::with_capacity(backlog));
+        let param_raw_slab = unsafe {
+            let ptr = param_raw_slab_buf.as_mut_ptr() as *mut AcceptParam;
             ManuallyDrop::new(RawSlab::new(ptr, backlog))
         };
 
         let completed_indexes = VecDeque::with_capacity(backlog);
         Self {
             accept_slab,
-            addr_raw_slab,
-            addr_raw_slab_buf,
+            param_raw_slab,
+            param_raw_slab_buf,
             completed_indexes,
         }
     }
@@ -201,9 +214,9 @@ impl Drop for Inner {
         for completed_index in self.completed_indexes.drain(..) {
             let completed_accept = self.accept_slab.get(completed_index).unwrap();
 
-            let addr = completed_accept.addr();
+            let param = completed_accept.param();
             unsafe {
-                self.addr_raw_slab.dealloc(addr);
+                self.param_raw_slab.dealloc(param);
             }
 
             let fd = completed_accept.fd().unwrap();
@@ -218,13 +231,13 @@ impl Drop for Inner {
         // accepts are freed, the slab should be empty.
         debug_assert!(self.accept_slab.is_empty());
         // So should the addr slab
-        debug_assert!(self.addr_raw_slab.allocated() == 0);
+        debug_assert!(self.param_raw_slab.allocated() == 0);
 
         // Since addr_raw_slab uses the memory allocated from addr_raw_slab_buf, we must
         // first drop the Vec object, then the Slab object.
         unsafe {
-            ManuallyDrop::drop(&mut self.addr_raw_slab_buf);
-            ManuallyDrop::drop(&mut self.addr_raw_slab);
+            ManuallyDrop::drop(&mut self.param_raw_slab);
+            ManuallyDrop::drop(&mut self.param_raw_slab_buf);
         }
     }
 }
@@ -232,10 +245,10 @@ impl Drop for Inner {
 // Implementation for Accept
 
 impl Accept {
-    pub fn addr(&self) -> *mut libc::sockaddr_in {
+    pub fn param(&self) -> *mut AcceptParam {
         match *self {
-            Self::Pending { addr, .. } => addr,
-            Self::Completed { addr, .. } => addr,
+            Self::Pending { param, .. } => param,
+            Self::Completed { param, .. } => param,
         }
     }
 
@@ -244,7 +257,7 @@ impl Accept {
             Self::Completed { .. } => {
                 panic!("a completed accept cannot be complete again");
             }
-            Self::Pending { addr, handle } => Self::Completed { addr: *addr, fd },
+            Self::Pending { param, handle } => Self::Completed { param: *param, fd },
         }
     }
 
@@ -253,5 +266,15 @@ impl Accept {
             Self::Completed { fd, .. } => Some(fd),
             Self::Pending { .. } => None,
         }
+    }
+}
+
+impl AcceptParam {
+    pub fn addr_mut_ptr(&mut self) -> *mut libc::sockaddr_in {
+        &mut self.addr as _
+    }
+
+    pub fn addrlen_mut_ptr(&mut self) -> *mut libc::socklen_t {
+        &mut self.addrlen as _
     }
 }
