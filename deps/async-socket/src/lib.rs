@@ -1,7 +1,6 @@
 #![cfg_attr(sgx, no_std)]
 #![feature(maybe_uninit_extra)]
-// comment out this feature in SGX!!!
-// #![feature(hash_set_entry)]
+#![feature(hash_set_entry)]
 #![allow(unused_variables)]
 #![allow(dead_code)]
 

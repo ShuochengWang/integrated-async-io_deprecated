@@ -22,4 +22,4 @@ keywords = ["slab", "allocator"]
 categories = ["memory-management", "data-structures"]
 
 [target.'cfg(sgx)'.dependencies]
-sgx_tstd = { git = "https://github.com/apache/teaclave-sgx-sdk.git", features = ["backtrace"] }
+sgx_tstd = { path = "../incubator-teaclave-sgx-sdk/sgx_tstd", features = ["backtrace"] }

@@ -26,9 +26,9 @@ lazy_static = "1"
 
 [target.'cfg(sgx)'.dependencies]
 lazy_static = { version = "1", features = ["spin_no_std"] }
-sgx_types = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
-sgx_tstd = { git = "https://github.com/apache/teaclave-sgx-sdk.git", features = ["backtrace"] }
-sgx_trts = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
+sgx_types = { path = "../incubator-teaclave-sgx-sdk/sgx_types" }
+sgx_tstd = { path = "../incubator-teaclave-sgx-sdk/sgx_tstd", features = ["backtrace"] }
+sgx_trts = { path = "../incubator-teaclave-sgx-sdk/sgx_trts" }
 
 [dev-dependencies]
 loom = { version = "0.3", features = ["checkpoint"] }

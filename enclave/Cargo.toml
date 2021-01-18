@@ -12,9 +12,9 @@ crate-type = ["staticlib"]
 default = []
 
 [target.'cfg(not(target_env = "sgx"))'.dependencies]
-sgx_types = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
-sgx_tstd = { git = "https://github.com/apache/teaclave-sgx-sdk.git", features = ["backtrace", "thread"] }
-sgx_trts = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
+sgx_types = { path = "../deps/incubator-teaclave-sgx-sdk/sgx_types" }
+sgx_tstd = { path = "../deps/incubator-teaclave-sgx-sdk/sgx_tstd", features = ["backtrace", "thread"] }
+sgx_trts = { path = "../deps/incubator-teaclave-sgx-sdk/sgx_trts" }
 
 [target.'cfg(sgx)'.dependencies]
 async-socket = { path = "../deps/async-socket" }

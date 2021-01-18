@@ -30,9 +30,9 @@ sc = { version = "0.2", optional = true }
 
 [target.'cfg(sgx)'.dependencies]
 bitflags = "1"
-sgx_types = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
-sgx_tstd = { git = "https://github.com/apache/teaclave-sgx-sdk.git", features = ["backtrace"] }
-sgx_trts = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
+sgx_types = { path = "../incubator-teaclave-sgx-sdk/sgx_types" }
+sgx_tstd = { path = "../incubator-teaclave-sgx-sdk/sgx_tstd", features = ["backtrace"] }
+sgx_trts = { path = "../incubator-teaclave-sgx-sdk/sgx_trts" }
 
 [build-dependencies]
 bindgen = { version = "0.56", optional = true }

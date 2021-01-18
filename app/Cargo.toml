@@ -5,11 +5,6 @@ authors = ["The Teaclave Authors"]
 build = "build.rs"
 
 [dependencies]
-sgx_types = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
-sgx_urts = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
+sgx_types = { path = "../deps/incubator-teaclave-sgx-sdk/sgx_types" }
+sgx_urts = { path = "../deps/incubator-teaclave-sgx-sdk/sgx_urts" }
 libc = "0.2"
-
-[patch.'https://github.com/apache/teaclave-sgx-sdk.git']
-sgx_types = { path = "../../../sgx_types" }
-sgx_urts = { path = "../../../sgx_urts" }
-
