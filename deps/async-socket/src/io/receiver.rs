@@ -31,9 +31,7 @@ struct Inner {
     buf_alloc: ManuallyDrop<UntrustedAllocator>,
     pending_io: Option<Handle>,
     end_of_file: bool,
-    iovecs: ManuallyDrop<*mut [MaybeUninit<libc::iovec>; 2]>,
-    #[cfg(not(sgx))]
-    iovecs_alloc: ManuallyDrop<[MaybeUninit<libc::iovec>; 2]>,
+    iovecs: ManuallyDrop<*mut [libc::iovec; 2]>,
     #[cfg(sgx)]
     iovecs_alloc: ManuallyDrop<UntrustedAllocator>,
 }
@@ -153,16 +151,16 @@ impl<P: IoUringProvider> Receiver<P> {
         unsafe {
             inner.buf.with_producer_view(|part0, part1| {
                 debug_assert!(part0.len() > 0);
-                (*iovec_ptr)[0].write(libc::iovec {
+                (*iovec_ptr)[0] = libc::iovec {
                     iov_base: part0.as_ptr() as _,
                     iov_len: part0.len() as _,
-                });
+                };
 
                 if part1.len() > 0 {
-                    (*iovec_ptr)[1].write(libc::iovec {
+                    (*iovec_ptr)[1] = libc::iovec {
                         iov_base: part1.as_ptr() as _,
                         iov_len: part1.len() as _,
-                    });
+                    };
                     iovec_len += 1;
                 }
 
@@ -210,14 +208,12 @@ impl Inner {
         let end_of_file = false;
         
         #[cfg(not(sgx))]
-        let mut iovecs_alloc = unsafe { std::mem::zeroed() };
-        #[cfg(not(sgx))]
-        let iovecs = &mut iovecs_alloc as *mut [MaybeUninit<libc::iovec>; 2];
+        let iovecs: *mut [libc::iovec; 2] = Box::into_raw(Box::new(unsafe { std::mem::zeroed() }));
         
         #[cfg(sgx)]
-        let iovecs_alloc = UntrustedAllocator::new(core::mem::size_of::<[MaybeUninit<libc::iovec>; 2]>(), 8).unwrap();
+        let iovecs_alloc = UntrustedAllocator::new(core::mem::size_of::<[libc::iovec; 2]>(), 8).unwrap();
         #[cfg(sgx)]
-        let iovecs = iovecs_alloc.as_mut_ptr() as *mut [MaybeUninit<libc::iovec>; 2];
+        let iovecs = iovecs_alloc.as_mut_ptr() as *mut [libc::iovec; 2];
 
         Inner {
             buf: ManuallyDrop::new(buf),
@@ -225,6 +221,7 @@ impl Inner {
             pending_io,
             end_of_file,
             iovecs: ManuallyDrop::new(iovecs),
+            #[cfg(sgx)]
             iovecs_alloc: ManuallyDrop::new(iovecs_alloc),
         }
     }
@@ -240,7 +237,13 @@ impl Drop for Inner {
         unsafe {
             ManuallyDrop::drop(&mut self.buf);
             ManuallyDrop::drop(&mut self.buf_alloc);
+
+            #[cfg(not(sgx))]
+            drop(Box::from_raw(*self.iovecs));
+
             ManuallyDrop::drop(&mut self.iovecs);
+            
+            #[cfg(sgx)]
             ManuallyDrop::drop(&mut self.iovecs_alloc);
         }
     }

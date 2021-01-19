@@ -27,8 +27,6 @@ struct Inner {
     pending_io: Option<Handle>,
     is_shutdown: bool,
     addr: ManuallyDrop<*mut libc::sockaddr_in>,
-    #[cfg(not(sgx))]
-    addr_alloc: ManuallyDrop<libc::sockaddr_in>,
     #[cfg(sgx)]
     addr_alloc: ManuallyDrop<UntrustedAllocator>,
 }
@@ -113,9 +111,7 @@ impl<P: IoUringProvider> Connector<P> {
 impl Inner {
     pub fn new() -> Self {
         #[cfg(not(sgx))]
-        let mut addr_alloc = unsafe { std::mem::zeroed() };
-        #[cfg(not(sgx))]
-        let addr = &mut addr_alloc as *mut libc::sockaddr_in;
+        let addr: *mut libc::sockaddr_in = Box::into_raw(Box::new(unsafe { std::mem::zeroed() }));
         
         #[cfg(sgx)]
         let addr_alloc = UntrustedAllocator::new(core::mem::size_of::<libc::sockaddr_in>(), 8).unwrap();
@@ -126,6 +122,7 @@ impl Inner {
             pending_io: None,
             is_shutdown: false,
             addr: ManuallyDrop::new(addr),
+            #[cfg(sgx)]
             addr_alloc: ManuallyDrop::new(addr_alloc),
         }
     }
@@ -134,7 +131,12 @@ impl Inner {
 impl Drop for Inner {
     fn drop(&mut self) {
         unsafe {
+            #[cfg(not(sgx))]
+            drop(Box::from_raw(*self.addr));
+
             ManuallyDrop::drop(&mut self.addr);
+
+            #[cfg(sgx)]
             ManuallyDrop::drop(&mut self.addr_alloc);
         }
     }
