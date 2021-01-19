@@ -91,11 +91,12 @@ impl<P: IoUringProvider> Receiver<P> {
             // Mark the socket as non-readable
             self.common.pollee().remove(Events::IN);
         }
-
+        
+        if inner.end_of_file {
+            return nbytes as i32;
+        }
+        
         if nbytes == 0 {
-            if inner.end_of_file {
-                return 0;
-            }
             if let Some(error) = self.common.error() {
                 return error;
             }
