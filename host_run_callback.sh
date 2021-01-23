@@ -1,6 +1,6 @@
 #!/bin/bash
 # compile server and client
-cd deps/io-uring-callback && RUSTFLAGS="--cfg use_slab" cargo build --examples --release && \
+cd deps/io-uring-callback && RUSTFLAGS="--cfg use_slab --cfg use_enter_thread" cargo build --examples --release && \
 cd ../../client && cargo build --release && cd ..
 
 # run server

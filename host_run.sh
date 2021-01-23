@@ -1,6 +1,6 @@
 #!/bin/bash
 # compile server and client
-cd deps/io-uring && cargo build --example tcp_echo --release && \
+cd deps/io-uring && RUSTFLAGS="--cfg use_enter_thread" cargo build --example tcp_echo --release && \
 cd ../../client && cargo build --release && cd ..
 
 # run server
