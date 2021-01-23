@@ -268,6 +268,56 @@ impl IoUring {
         handle
     }
 
+    pub unsafe fn recvmsg(
+        &self,
+        fd: Fd,
+        // fixed_fd: Fixed,
+        msg: *mut libc::msghdr,
+        flags: u32,
+        callback: impl FnOnce(i32) + Send + 'static,
+    ) -> Handle {
+        let token_idx = self.gen_token(callback);
+
+        let entry = opcode::RecvMsg::new(fd, msg)
+            .flags(flags)
+            .build()
+            .user_data(token_idx as _);
+        if let Err(entry) = self.inner.submission().push(entry) {
+            panic!("sq must be large enough");
+        }
+        if let Err(e) = self.inner.submit() {
+            panic!("submit failed, error: {}", e);
+        }
+
+        let handle = self.gen_handle(token_idx);
+        handle
+    }
+
+    pub unsafe fn sendmsg(
+        &self,
+        fd: Fd,
+        // fixed_fd: Fixed,
+        msg: *const libc::msghdr,
+        flags: u32,
+        callback: impl FnOnce(i32) + Send + 'static,
+    ) -> Handle {
+        let token_idx = self.gen_token(callback);
+
+        let entry = opcode::SendMsg::new(fd, msg)
+            .flags(flags)
+            .build()
+            .user_data(token_idx as _);
+        if let Err(entry) = self.inner.submission().push(entry) {
+            panic!("sq must be large enough");
+        }
+        if let Err(e) = self.inner.submit() {
+            panic!("submit failed, error: {}", e);
+        }
+
+        let handle = self.gen_handle(token_idx);
+        handle
+    }
+
     /// Scan for completed async I/O and trigger their registered callbacks.
     #[cfg(not(use_slab))]
     pub fn trigger_callbacks(&self) {
