@@ -3,7 +3,7 @@ use sgx_trts::libc;
 #[cfg(sgx)]
 use std::prelude::v1::*;
 use std::mem::{ManuallyDrop, MaybeUninit};
-use std::ptr::NonNull;
+use std::ptr::{self, NonNull};
 #[cfg(not(sgx))]
 use std::sync::{Arc, Mutex, MutexGuard};
 #[cfg(sgx)]
@@ -31,12 +31,18 @@ struct Inner {
     buf_alloc: ManuallyDrop<UntrustedAllocator>,
     pending_io: Option<Handle>,
     end_of_file: bool,
-    iovecs: ManuallyDrop<*mut [libc::iovec; 2]>,
+    msg_param: ManuallyDrop<*mut MsgParam>,
     #[cfg(sgx)]
-    iovecs_alloc: ManuallyDrop<UntrustedAllocator>,
+    msg_param_alloc: ManuallyDrop<UntrustedAllocator>,
 }
 
 unsafe impl Send for Inner {}
+
+// Contains msghdr and iovec. Not support msg_name and and msg_control.
+pub(crate) struct MsgParam {
+    pub msg: libc::msghdr,
+    pub iovecs: [libc::iovec; 2],
+}
 
 impl<P: IoUringProvider> Receiver<P> {
     /// Construct the receiver of a socket.
@@ -147,17 +153,18 @@ impl<P: IoUringProvider> Receiver<P> {
 
         // Construct the iovec for the async fill
         let mut iovec_len = 1;
-        let iovec_ptr = *inner.iovecs;
+        let msg_param_ptr = *inner.msg_param;
+        let mut msg_ptr = unsafe { &mut (*msg_param_ptr).msg as *mut libc::msghdr };
         unsafe {
             inner.buf.with_producer_view(|part0, part1| {
                 debug_assert!(part0.len() > 0);
-                (*iovec_ptr)[0] = libc::iovec {
+                (*msg_param_ptr).iovecs[0] = libc::iovec {
                     iov_base: part0.as_ptr() as _,
                     iov_len: part0.len() as _,
                 };
 
                 if part1.len() > 0 {
-                    (*iovec_ptr)[1] = libc::iovec {
+                    (*msg_param_ptr).iovecs[1] = libc::iovec {
                         iov_base: part1.as_ptr() as _,
                         iov_len: part1.len() as _,
                     };
@@ -167,12 +174,20 @@ impl<P: IoUringProvider> Receiver<P> {
                 // Only access the producer's buffer; zero bytes produced for now.
                 0
             });
+
+            (*msg_ptr).msg_name = ptr::null_mut() as _;
+            (*msg_ptr).msg_namelen = 0;
+            (*msg_ptr).msg_iov = &mut (*msg_param_ptr).iovecs as *mut [libc::iovec; 2] as *mut _;
+            (*msg_ptr).msg_iovlen = iovec_len;
+            (*msg_ptr).msg_control = ptr::null_mut() as _;
+            (*msg_ptr).msg_controllen = 0;
+            (*msg_ptr).msg_flags = 0;
         }
 
         // Submit the async flush to io_uring
         let io_uring = &self.common.io_uring();
         let handle = unsafe {
-            io_uring.readv(Fd(self.common.fd()), iovec_ptr as *const _, iovec_len, 0, 0, complete_fn)
+            io_uring.recvmsg(Fd(self.common.fd()), msg_ptr, 0, complete_fn)
         };
         inner.pending_io.replace(handle);
     }
@@ -208,21 +223,21 @@ impl Inner {
         let end_of_file = false;
         
         #[cfg(not(sgx))]
-        let iovecs: *mut [libc::iovec; 2] = Box::into_raw(Box::new(unsafe { std::mem::zeroed() }));
+        let msg_param: *mut MsgParam = Box::into_raw(Box::new(unsafe { std::mem::zeroed() }));
         
         #[cfg(sgx)]
-        let iovecs_alloc = UntrustedAllocator::new(core::mem::size_of::<[libc::iovec; 2]>(), 8).unwrap();
+        let msg_param_alloc = UntrustedAllocator::new(core::mem::size_of::<MsgParam>(), 8).unwrap();
         #[cfg(sgx)]
-        let iovecs = iovecs_alloc.as_mut_ptr() as *mut [libc::iovec; 2];
+        let msg_param: *mut MsgParam = msg_param_alloc.as_mut_ptr() as _;
 
         Inner {
             buf: ManuallyDrop::new(buf),
             buf_alloc: ManuallyDrop::new(buf_alloc),
             pending_io,
             end_of_file,
-            iovecs: ManuallyDrop::new(iovecs),
+            msg_param: ManuallyDrop::new(msg_param),
             #[cfg(sgx)]
-            iovecs_alloc: ManuallyDrop::new(iovecs_alloc),
+            msg_param_alloc: ManuallyDrop::new(msg_param_alloc),
         }
     }
 }
@@ -239,12 +254,12 @@ impl Drop for Inner {
             ManuallyDrop::drop(&mut self.buf_alloc);
 
             #[cfg(not(sgx))]
-            drop(Box::from_raw(*self.iovecs));
+            drop(Box::from_raw(*self.msg_param));
 
-            ManuallyDrop::drop(&mut self.iovecs);
+            ManuallyDrop::drop(&mut self.msg_param);
             
             #[cfg(sgx)]
-            ManuallyDrop::drop(&mut self.iovecs_alloc);
+            ManuallyDrop::drop(&mut self.msg_param_alloc);
         }
     }
 }
