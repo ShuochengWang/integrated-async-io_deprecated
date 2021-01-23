@@ -21,7 +21,7 @@ impl IoUringProvider for IoUringInstanceType {
     }
 }
 
-async fn tcp_echo() {
+async fn tcp_client() {
     let socket = Socket::<IoUringInstanceType>::new();
 
     {
@@ -32,40 +32,27 @@ async fn tcp_echo() {
             sin_addr: libc::in_addr { s_addr: 0 },
             sin_zero: [0; 8],
         };
-        let ret = socket.bind(&servaddr);
+        let ret = socket.connect(&servaddr).await;
         assert!(ret >= 0);
+        println!("[client] connected!");
     }
-    
-    {
-        let ret = socket.listen(10);
-        assert_eq!(ret, 0);
-    }
-    println!("listen 127.0.0.1:3456");
 
+    let mut buf = vec![0u8; 2048];
+    let mut i: i32 = 0;
     loop {
-        if let Ok(client) = socket.accept(None).await {
-            println!("accept");
+        let bytes_write = socket.write(buf.as_slice()).await;
 
-            async_rt::task::spawn(async move {
-                let mut buf = vec![0u8; 2048];
+        let bytes_read = socket.read(buf.as_mut_slice()).await;
 
-                loop {
-                    let bytes_read = client.read(buf.as_mut_slice()).await;
+        assert_eq!(bytes_read, bytes_write);
 
-                    if bytes_read == 0 {
-                        println!("shutdown");
-                        break;
-                    }
-
-                    let bytes_write = client.write(buf.as_slice()).await;
-
-                    assert_eq!(bytes_read, bytes_write);
-                }
-            });
-        } else {
-            println!("accept() return err.");
+        i += 1;
+        if i > 0 {
+            break;
         }
     }
+
+    socket.shutdown(libc::SHUT_RDWR);
 }
 
 fn main() {
@@ -74,5 +61,6 @@ fn main() {
         ring.trigger_callbacks();
     };
     test_rt::register_actor(actor);
-    test_rt::run_blocking(tcp_echo());
+    
+    test_rt::run_blocking(tcp_client());
 }

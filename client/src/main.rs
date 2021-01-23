@@ -7,11 +7,23 @@ fn main() {
     let pid = process::id();
     println!("[client {}] client app started...", pid);
 
-    let socket_fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0) };
+    let socket_fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, libc::IPPROTO_TCP) };
     if socket_fd < 0 {
         println!("[client {}] create socket failed, ret: {}", pid, socket_fd);
         return;
     }
+
+    let val: i32 = 1;
+    let mut ret = unsafe {
+        libc::setsockopt(
+            socket_fd,
+            libc::IPPROTO_TCP,
+            libc::TCP_NODELAY,
+            &val as *const i32 as _,
+            core::mem::size_of::<i32>() as u32,
+        )
+    };
+    assert!(ret != -1);
 
     let servaddr = libc::sockaddr_in {
         sin_family: libc::AF_INET as u16,
@@ -34,6 +46,7 @@ fn main() {
         }
         return;
     }
+    println!("[client {}] connected!", pid);
 
     let mut buf = vec![0u8; 2048];
     let mut cnt = 0;

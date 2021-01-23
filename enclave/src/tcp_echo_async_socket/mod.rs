@@ -52,7 +52,6 @@ async fn tcp_echo() {
                 let mut buf = vec![0u8; 2048];
 
                 loop {
-                    println!("start read");
                     let bytes_read = client.read(buf.as_mut_slice()).await;
 
                     if bytes_read == 0 {
@@ -60,12 +59,9 @@ async fn tcp_echo() {
                         break;
                     }
 
-                    println!("start write");
                     let bytes_write = client.write(buf.as_slice()).await;
 
                     assert_eq!(bytes_read, bytes_write);
-
-                    println!("read {}, write {}", bytes_read, bytes_write);
                 }
             });
         } else {

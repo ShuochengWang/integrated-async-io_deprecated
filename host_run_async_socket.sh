@@ -9,8 +9,8 @@ cd ../../client && cargo build --release && cd ..
 sleep 1
 
 # run clients
-# ./client/target/release/client &
-# ./client/target/release/client &
+./client/target/release/client &
+./client/target/release/client &
 ./client/target/release/client
 
 sleep 2
