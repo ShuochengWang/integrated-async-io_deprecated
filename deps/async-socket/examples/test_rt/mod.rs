@@ -11,7 +11,7 @@ pub(crate) fn register_actor(actor: impl Fn() + Send + 'static) {
     TEST_RT.register_actor(actor);
 }
 
-const TEST_PARALLELISM: u32 = 2;
+const TEST_PARALLELISM: u32 = 3;
 
 lazy_static! {
     static ref TEST_RT: TestRt = TestRt::new(TEST_PARALLELISM);

@@ -1,7 +1,7 @@
 use super::*;
 use sgx_trts::libc;
 use std::prelude::v1::*;
-use std::sync::Arc;
+use std::sync::{Arc, SgxMutex as Mutex};
 
 use async_socket::{Socket, IoUringProvider};
 use io_uring_callback::{Builder, IoUring};
@@ -44,11 +44,37 @@ async fn tcp_echo() {
     }
     println!("listen 127.0.0.1:3456");
 
+    let mut aff_id : Mutex<usize> = Mutex::new(0);
     loop {
         if let Ok(client) = socket.accept(None).await {
             println!("accept");
 
+            let mut guard = aff_id.lock().unwrap();
+            let aff_id = *guard;
+            *guard += 1;
+            drop(guard);
+
             async_rt::task::spawn(async move {
+                use async_rt::sched::Affinity;
+
+                let current = async_rt::task::current();
+
+                let mut affinity = current.sched_info().affinity().write();
+                assert!(affinity.is_full());
+
+                let new_affinity = {
+                    let mut new_affinity = Affinity::new_empty();
+                    new_affinity.set(aff_id, true);
+                    new_affinity
+                };
+                *affinity = new_affinity.clone();
+                drop(affinity);
+                println!("set affinity: {}", aff_id);
+
+                async_rt::sched::yield_().await;
+
+                assert!(*current.sched_info().affinity().read() == new_affinity);
+
                 let mut buf = vec![0u8; 2048];
 
                 loop {
